@@ -272,7 +272,9 @@ function setChrome(show){
   badge.className = 'modebadge' + (isEdit() ? ' edit' : '');
   $('#lockBtn').hidden = !show;
   $('#searchBtn').hidden = !show;
-  $('#backBtn').hidden = !(show && parseHash().length);
+  // Bakka-örin sést alltaf: á undirsíðum = til baka, á opnunarsíðu = skrá inn aftur
+  $('#backBtn').hidden = !show;
+  $('#backBtn').title = parseHash().length ? 'Til baka' : 'Skrá inn aftur';
 }
 
 /* ============================================================
@@ -702,6 +704,7 @@ function mountEditableText(host, value, placeholder, onSave, opts={}){
    ============================================================ */
 $('#backBtn').onclick = () => {
   const p = parseHash();
+  if(p.length === 0){ lock(); return; }                              // á opnunarsíðu -> skrá inn aftur (1234 / 2808)
   if(p[0]==='n' && p.length>2) go('#/n/' + p.slice(1,-1).join('/'));  // upp um eitt stig
   else go('#/');                                                       // annað -> forsíða
 };
