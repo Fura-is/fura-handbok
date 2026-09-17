@@ -1,0 +1,31 @@
+name: Halda Supabase vakandi
+
+# Ókeypis "keep-alive": pingar bakendann daglega svo fría Supabase-verkefnið
+# fari ekki í pásu vegna aðgerðaleysis. Notar opinbera (browser-safe) lykilinn
+# sem er hvort eð er í supabase-config.js, og vitlausan kóða — það er nóg til
+# að snerta gagnagrunninn og telja sem virkni, án þess að sækja nein raungögn.
+
+on:
+  schedule:
+    - cron: '0 8 * * *'      # daglega kl. 08:00 UTC
+  workflow_dispatch:          # + hægt að keyra handvirkt í Actions-flipanum
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping handbók-bakenda
+        run: |
+          code=$(curl -sS -X POST \
+            "https://arihmnfpudocsfyrihta.supabase.co/rest/v1/rpc/get_handbook" \
+            -H "apikey: sb_publishable_Hq8eqVjm5-0rkPIa1JaPdw_TLUsTvZX" \
+            -H "Authorization: Bearer sb_publishable_Hq8eqVjm5-0rkPIa1JaPdw_TLUsTvZX" \
+            -H "Content-Type: application/json" \
+            -d '{"p_code":"0000"}' \
+            -o /dev/null -w "%{http_code}")
+          echo "Supabase svaraði HTTP $code"
+          # 200 = í lagi (skilar null því kóði er vitlaus). Allt annað en 2xx = villa.
+          case "$code" in
+            2*) echo "Bakendi vakandi ✓" ;;
+            *)  echo "::warning::Óvænt svar frá Supabase ($code)" ;;
+          esac
