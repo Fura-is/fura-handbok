@@ -405,18 +405,18 @@ function renderNode(path){
       <div class="grid">${childCards || (isEdit()?'':'<p class="empty">Ekkert skráð enn.</p>')}${addChild}</div>
     </div>` : `<div class="leaf-note">Engar fleiri vélar hér inni — allar upplýsingar eru á þessari síðu.</div>`}
 
-    <div class="section">
+    <div class="section" id="secNotes">
       <div class="section__head"><span class="section__icon">📝</span><h2>Athugasemdir</h2></div>
       <div id="notesField" class="notecard"></div>
     </div>
 
-    <div class="section">
+    <div class="section" id="secSupplies">
       <div class="section__head"><span class="section__icon">📦</span><h2>Birgðir</h2></div>
       <div id="supplies"></div>
       ${isEdit()?`<button class="addbtn" id="addSupply">＋ Bæta við birgð</button>`:''}
     </div>
 
-    <div class="section">
+    <div class="section" id="secContacts">
       <div class="section__head"><span class="section__icon">👥</span><h2>Tengiliðir</h2></div>
       <div id="contacts"></div>
       ${isEdit()?`<button class="addbtn" id="addContact">＋ Bæta við tengilið</button>`:''}
@@ -429,6 +429,13 @@ function renderNode(path){
 
   renderSupplies(node);
   renderContacts(node);
+
+  // Í lestrarham: fela tóma hluta svo aðeins það sem hefur upplýsingar sjáist (símavænt)
+  if(!isEdit()){
+    if(!(node.notes||'').trim())  $('#secNotes').style.display='none';
+    if(!node.supplies.length)     $('#secSupplies').style.display='none';
+    if(!node.contacts.length)     $('#secContacts').style.display='none';
+  }
 
   if(isEdit()){
     $('#heroPhoto').onclick = async ()=>{ const url=await pickAndUpload(); if(url){ node.photo=url; saveData(); rerender(); } };
