@@ -403,7 +403,7 @@ function renderNode(path){
     ${showChildren ? `<div class="section">
       <div class="section__head"><span class="section__icon">📂</span><h2>Vélar</h2></div>
       <div class="grid">${childCards || (isEdit()?'':'<p class="empty">Ekkert skráð enn.</p>')}${addChild}</div>
-    </div>` : `<div class="leaf-note">Engar fleiri vélar hér inni — allar upplýsingar eru á þessari síðu.</div>`}
+    </div>` : ``}
 
     <div class="section" id="secNotes">
       <div class="section__head"><span class="section__icon">📝</span><h2>Athugasemdir</h2></div>
