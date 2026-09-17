@@ -449,7 +449,7 @@ function renderNode(path){
       toast('Eytt');
     };
     $('#addChild').onclick = ()=>addChildTo(node.children, rerender);
-    $('#addSupply').onclick = ()=>{ node.supplies.push({id:uid(),name:'',qty:'',supplier:'',url:'',note:''}); saveData(); rerender(); };
+    $('#addSupply').onclick = ()=>{ node.supplies.push({id:uid(),name:'',qty:'',supplier:'',note:''}); saveData(); rerender(); };
     $('#addContact').onclick = ()=> chooseContact(node, (personIds)=>{
       personIds.forEach(personId => node.contacts.push({ id:uid(), personId, help:'' }));
       saveData(); rerender();
@@ -539,14 +539,12 @@ function renderSupplies(node){
       const meta=$('.sMeta',el); meta.innerHTML='';
       meta.appendChild(fieldLine('Magn / staða á lager', s.qty, 'T.d. 2 fötur eftir', (v)=>{s.qty=v;saveData();}));
       meta.appendChild(fieldLine('Hvar á að kaupa', s.supplier, 'T.d. Olís, Vélaver…', (v)=>{s.supplier=v;saveData();}));
-      meta.appendChild(fieldLine('Vefslóð', s.url, 'https://…', (v)=>{s.url=v;saveData();}));
       meta.appendChild(fieldLine('Athugasemd', s.note, 'T.d. panta þegar 1 eftir', (v)=>{s.note=v;saveData();}));
     } else {
       let html='';
       if(s.qty) html += `<div class="meta">Magn: <strong>${esc(s.qty)}</strong></div>`;
       if(s.supplier) html += `<div class="meta">Kaupa hjá: ${esc(s.supplier)}</div>`;
       if(s.note) html += `<div class="meta">${esc(s.note)}</div>`;
-      if(s.url) html += `<div class="meta"><a href="${esc(s.url)}" target="_blank" rel="noopener">Opna vefsíðu →</a></div>`;
       $('.sMeta',el).innerHTML = html || '<span class="meta">Engar upplýsingar enn.</span>';
     }
     if(isEdit()) $('[data-act="del"]',el).onclick=()=>{ if(confirm('Eyða þessari birgð?')){ node.supplies=node.supplies.filter(x=>x!==s); saveData(); renderSupplies(node);} };
