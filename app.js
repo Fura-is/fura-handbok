@@ -267,10 +267,6 @@ function render(){
 function setChrome(show){
   $('#topbar').hidden = !show;
   $('#footer').hidden = !show;
-  const badge = $('#modeBadge');
-  badge.textContent = isEdit() ? '✏️ Breytingar' : 'Lestur';
-  badge.className = 'modebadge' + (isEdit() ? ' edit' : '');
-  $('#lockBtn').hidden = !show;
   $('#searchBtn').hidden = !show;
   // Bakka-örin sést alltaf: á undirsíðum = til baka, á opnunarsíðu = skrá inn aftur
   $('#backBtn').hidden = !show;
@@ -789,7 +785,6 @@ $('#backBtn').onclick = () => {
   if(p[0]==='n' && p.length>2) go('#/n/' + p.slice(1,-1).join('/'));  // upp um eitt stig
   else go('#/');                                                       // annað -> forsíða
 };
-$('#lockBtn').onclick = () => { if(confirm('Læsa handbókinni?')) lock(); };
 $('#searchBtn').onclick = () => go('#/leit');
 
 window.addEventListener('hashchange', render);
