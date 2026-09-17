@@ -215,7 +215,7 @@ async function pickAndUpload(){
 }
 
 function photoBlock(src, cls, phIcon='▲'){
-  if(src) return `<div class="${cls}"><img src="${src}" alt=""></div>`;
+  if(src) return `<div class="${cls}"><img src="${src}" alt="" loading="lazy" decoding="async"></div>`;
   return `<div class="${cls}"><div class="card__ph">${phIcon}</div></div>`;
 }
 
