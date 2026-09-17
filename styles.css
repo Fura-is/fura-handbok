@@ -296,3 +296,10 @@ textarea.edit{min-height:80px;resize:vertical}
 .modal__name{font-weight:700;font-size:15px}
 .modal__meta{font-size:12px;color:var(--muted)}
 .modal__cancel{width:100%;margin-top:10px}
+.modal__search{margin-bottom:12px}
+.modal__item{flex-direction:row;align-items:center;gap:12px}
+.modal__item--sel{border-color:var(--green);background:#eef3ef}
+.modal__check{font-size:20px;line-height:1;color:var(--green);flex:0 0 auto}
+.modal__itembody{display:flex;flex-direction:column;gap:2px;min-width:0}
+.modal__add{flex:1;background:var(--green);color:#fff;border-color:var(--green)}
+.modal__add:disabled{opacity:.5}

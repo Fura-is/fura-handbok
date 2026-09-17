@@ -447,47 +447,79 @@ function renderNode(path){
     };
     $('#addChild').onclick = ()=>addChildTo(node.children, rerender);
     $('#addSupply').onclick = ()=>{ node.supplies.push({id:uid(),name:'',qty:'',supplier:'',url:'',note:''}); saveData(); rerender(); };
-    $('#addContact').onclick = ()=> chooseContact(node, (personId)=>{
-      node.contacts.push({ id:uid(), personId, help:'' });
+    $('#addContact').onclick = ()=> chooseContact(node, (personIds)=>{
+      personIds.forEach(personId => node.contacts.push({ id:uid(), personId, help:'' }));
       saveData(); rerender();
+      toast(personIds.length>1 ? `${personIds.length} tengiliðir bættust við` : 'Tengiliður bættist við');
     });
   }
 }
 
-// Valmynd: velja úr vistuðum tengiliðum eða búa til nýjan. Skilar personId í done().
+// leitartexti manneskju: nafn + um viðkomandi + leitarorð + sími
+function personSearchText(p){ return `${p.name||''} ${p.about||''} ${p.keywords||''} ${p.phone||''}`.toLowerCase(); }
+
+// Valmynd: leita (nafn/leitarorð), haka við marga, bæta þeim öllum við. Skilar lista af personId í done().
 function chooseContact(node, done){
   const attached = new Set((node.contacts||[]).map(c=>c.personId));
-  const people = (DATA.people||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','is'));
+  let people = (DATA.people||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','is'));
+  const selected = new Set();
+
   const overlay = document.createElement('div'); overlay.className='modal';
   overlay.innerHTML = `
     <div class="modal__box">
-      <div class="modal__title">Bæta við tengilið</div>
-      <div class="modal__hint">Veldu vistaðan tengilið eða búðu til nýjan. Nafn, símanúmer og lýsing vistast og nýtast á öllum tækjum.</div>
-      <div class="modal__list">
-        ${people.length ? people.map(p=>`
-          <button class="modal__item" data-id="${p.id}" ${attached.has(p.id)?'disabled':''}>
-            <span class="modal__name">${esc(p.name||'(nafnlaus)')}</span>
-            <span class="modal__meta">${esc(p.phone||'')}${p.about?(p.phone?' · ':'')+esc(p.about):''}${attached.has(p.id)?' — þegar á þessu tæki':''}</span>
-          </button>`).join('') : '<p class="empty">Engir vistaðir tengiliðir enn.</p>'}
-      </div>
+      <div class="modal__title">Bæta við tengiliðum</div>
+      <div class="modal__hint">Leitaðu eftir nafni eða leitarorði (t.d. „mótor"). Hakaðu við þá sem eiga við og bættu þeim öllum við í einu.</div>
+      <input class="searchinput modal__search" id="pickerSearch" placeholder="Leita — nafn eða leitarorð…" autocomplete="off">
+      <div class="modal__list" id="pickerList"></div>
       <button class="addbtn" data-act="new">＋ Nýr tengiliður</button>
-      <button class="editbtn modal__cancel" data-act="cancel">Hætta við</button>
+      <div class="editrow" style="margin-top:12px">
+        <button class="editbtn modal__add" data-act="add" disabled>Bæta við völdum (0)</button>
+        <button class="editbtn" data-act="cancel">Hætta við</button>
+      </div>
     </div>`;
   document.body.appendChild(overlay);
   const close = ()=>overlay.remove();
-  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
-  overlay.querySelectorAll('.modal__item').forEach(btn=>{
-    if(btn.disabled) return;
-    btn.onclick = ()=>{ close(); done(btn.dataset.id); };
-  });
+  const listEl = overlay.querySelector('#pickerList');
+  const searchEl = overlay.querySelector('#pickerSearch');
+  const addBtn = overlay.querySelector('[data-act="add"]');
+
+  function updateAdd(){ addBtn.textContent = `Bæta við völdum (${selected.size})`; addBtn.disabled = selected.size===0; }
+
+  function draw(){
+    const terms = searchEl.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const matches = people.filter(p => terms.every(t => personSearchText(p).includes(t)));
+    listEl.innerHTML = matches.length ? matches.map(p=>{
+      const isAtt = attached.has(p.id), isSel = selected.has(p.id);
+      const meta = [p.phone, p.keywords?('🔑 '+p.keywords):'', p.about].filter(Boolean).join(' · ');
+      return `<button class="modal__item ${isSel?'modal__item--sel':''}" data-id="${p.id}" ${isAtt?'disabled':''}>
+        <span class="modal__check">${isAtt?'✓':(isSel?'☑':'☐')}</span>
+        <span class="modal__itembody">
+          <span class="modal__name">${esc(p.name||'(nafnlaus)')}</span>
+          <span class="modal__meta">${esc(meta)}${isAtt?' — þegar á þessu tæki':''}</span>
+        </span>
+      </button>`;
+    }).join('') : '<p class="empty">Ekkert fannst.</p>';
+    listEl.querySelectorAll('.modal__item').forEach(btn=>{
+      if(btn.disabled) return;
+      btn.onclick = ()=>{ const id=btn.dataset.id; selected.has(id)?selected.delete(id):selected.add(id); draw(); updateAdd(); };
+    });
+  }
+
+  searchEl.addEventListener('input', draw);
   overlay.querySelector('[data-act="new"]').onclick = ()=>{
     const name = prompt('Nafn tengiliðar:'); if(!name || !name.trim()){ return; }
     const phone = (prompt('Símanúmer (má sleppa):')||'').trim();
     const about = (prompt('Um viðkomandi — hver er þetta? (má sleppa):')||'').trim();
-    const person = { id:uid(), name:name.trim(), phone, about };
-    DATA.people.push(person); close(); done(person.id);
+    const keywords = (prompt('Leitarorð (t.d. mótor, glussi) — má sleppa:')||'').trim();
+    const person = { id:uid(), name:name.trim(), phone, about, keywords };
+    DATA.people.push(person); people.push(person); selected.add(person.id);
+    searchEl.value=''; draw(); updateAdd();
   };
+  addBtn.onclick = ()=>{ if(!selected.size) return; const ids=[...selected]; close(); done(ids); };
   overlay.querySelector('[data-act="cancel"]').onclick = close;
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
+
+  draw(); updateAdd(); searchEl.focus();
 }
 
 function renderSupplies(node){
@@ -585,7 +617,7 @@ function renderSearch(){
     let s = `${n.name||''} ${n.summary||''} ${n.notes||''}`;
     (n.contacts||[]).forEach(c=>{
       const p = getPerson(c.personId) || {};
-      s += ` ${p.name||''} ${p.about||''} ${p.phone||''} ${c.help||''}`;
+      s += ` ${p.name||''} ${p.about||''} ${p.phone||''} ${p.keywords||''} ${c.help||''}`;
     });
     (n.supplies||[]).forEach(x=>{ s += ` ${x.name||''} ${x.qty||''} ${x.supplier||''} ${x.note||''}`; });
     return s.toLowerCase();
@@ -641,6 +673,7 @@ function renderPhonebook(){
       <div class="pbName"></div>
       <div class="pbPhone"></div>
       <div class="pbAbout"></div>
+      <div class="pbKeywords"></div>
       <div class="pbMachines"></div>
       ${isEdit()?`<div class="editrow"><button class="delbtn" data-act="del">✕ Eyða úr símaskrá</button></div>`:''}`;
 
@@ -648,12 +681,14 @@ function renderPhonebook(){
       mountEditableText($('.pbName',el), p.name, 'Nafn', (v)=>{p.name=v;saveData();}, {strong:true});
       $('.pbPhone',el).appendChild(fieldLine('Símanúmer', p.phone, 'T.d. 555 1234', (v)=>{p.phone=v;saveData();}));
       $('.pbAbout',el).appendChild(fieldLine('Um viðkomandi', p.about, 'Hver er þetta? T.d. rafvirki hjá Rafal', (v)=>{p.about=v;saveData();}));
+      $('.pbKeywords',el).appendChild(fieldLine('Leitarorð', p.keywords, 'T.d. mótor, glussi, rafmagn', (v)=>{p.keywords=v;saveData();}));
     } else {
       $('.pbName',el).innerHTML = `<div class="pbName__t">${esc(p.name||'(nafnlaus)')}</div>`;
       $('.pbPhone',el).innerHTML = p.phone
         ? `<a class="pbCall" href="tel:${esc((p.phone||'').replace(/\s+/g,''))}">📞 ${esc(p.phone)}</a>`
         : `<span class="meta">Ekkert símanúmer skráð</span>`;
       $('.pbAbout',el).innerHTML = p.about ? `<div class="meta">${esc(p.about)}</div>` : '';
+      $('.pbKeywords',el).innerHTML = p.keywords ? `<div class="meta pbKw">🔑 ${esc(p.keywords)}</div>` : '';
     }
 
     const mWrap = $('.pbMachines',el);
