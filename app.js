@@ -376,6 +376,7 @@ function renderNode(path){
   const node = r.node;
   node.children = node.children || [];
   node.contacts = node.contacts || [];
+  node.supplies = node.supplies || [];
   const ancestors = r.chain.slice(0, -1);
   const crumbs = ['Forsíða', ...ancestors.map(a=>esc(a.name))].join(' · ');
   const rerender = ()=>renderNode(path);
@@ -410,6 +411,12 @@ function renderNode(path){
     </div>
 
     <div class="section">
+      <div class="section__head"><span class="section__icon">📦</span><h2>Birgðir</h2></div>
+      <div id="supplies"></div>
+      ${isEdit()?`<button class="addbtn" id="addSupply">＋ Bæta við birgð</button>`:''}
+    </div>
+
+    <div class="section">
       <div class="section__head"><span class="section__icon">👥</span><h2>Tengiliðir</h2></div>
       <div id="contacts"></div>
       ${isEdit()?`<button class="addbtn" id="addContact">＋ Bæta við tengilið</button>`:''}
@@ -420,6 +427,7 @@ function renderNode(path){
   mountEditableText(notesHost, node.notes, 'Skrifaðu athugasemdir…', (v)=>{ node.notes=v; saveData(); });
   if(!isEdit() && !(node.notes||'').trim()){ notesHost.classList.remove('notecard'); notesHost.innerHTML='<p class="empty">Engar athugasemdir enn.</p>'; }
 
+  renderSupplies(node);
   renderContacts(node);
 
   if(isEdit()){
@@ -438,6 +446,7 @@ function renderNode(path){
       toast('Eytt');
     };
     $('#addChild').onclick = ()=>addChildTo(node.children, rerender);
+    $('#addSupply').onclick = ()=>{ node.supplies.push({id:uid(),name:'',qty:'',supplier:'',url:'',note:''}); saveData(); rerender(); };
     $('#addContact').onclick = ()=> chooseContact(node, (personId)=>{
       node.contacts.push({ id:uid(), personId, help:'' });
       saveData(); rerender();
@@ -479,6 +488,35 @@ function chooseContact(node, done){
     DATA.people.push(person); close(); done(person.id);
   };
   overlay.querySelector('[data-act="cancel"]').onclick = close;
+}
+
+function renderSupplies(node){
+  const wrap = $('#supplies');
+  node.supplies = node.supplies || [];
+  if(!node.supplies.length && !isEdit()){ wrap.innerHTML='<p class="empty">Engar birgðir skráðar enn.</p>'; return; }
+  wrap.innerHTML='';
+  node.supplies.forEach(s=>{
+    const el=document.createElement('div'); el.className='row';
+    el.innerHTML=`<div class="sName"></div><div class="sMeta"></div>
+      ${isEdit()?`<div class="editrow"><button class="delbtn" data-act="del">✕ Eyða</button></div>`:''}`;
+    mountEditableText($('.sName',el), s.name, 'Heiti birgða / vöru', (v)=>{s.name=v;saveData();}, {strong:true});
+    if(isEdit()){
+      const meta=$('.sMeta',el); meta.innerHTML='';
+      meta.appendChild(fieldLine('Magn / staða á lager', s.qty, 'T.d. 2 fötur eftir', (v)=>{s.qty=v;saveData();}));
+      meta.appendChild(fieldLine('Hvar á að kaupa', s.supplier, 'T.d. Olís, Vélaver…', (v)=>{s.supplier=v;saveData();}));
+      meta.appendChild(fieldLine('Vefslóð', s.url, 'https://…', (v)=>{s.url=v;saveData();}));
+      meta.appendChild(fieldLine('Athugasemd', s.note, 'T.d. panta þegar 1 eftir', (v)=>{s.note=v;saveData();}));
+    } else {
+      let html='';
+      if(s.qty) html += `<div class="meta">Magn: <strong>${esc(s.qty)}</strong></div>`;
+      if(s.supplier) html += `<div class="meta">Kaupa hjá: ${esc(s.supplier)}</div>`;
+      if(s.note) html += `<div class="meta">${esc(s.note)}</div>`;
+      if(s.url) html += `<div class="meta"><a href="${esc(s.url)}" target="_blank" rel="noopener">Opna vefsíðu →</a></div>`;
+      $('.sMeta',el).innerHTML = html || '<span class="meta">Engar upplýsingar enn.</span>';
+    }
+    if(isEdit()) $('[data-act="del"]',el).onclick=()=>{ if(confirm('Eyða þessari birgð?')){ node.supplies=node.supplies.filter(x=>x!==s); saveData(); renderSupplies(node);} };
+    wrap.appendChild(el);
+  });
 }
 
 function renderContacts(node){
@@ -549,6 +587,7 @@ function renderSearch(){
       const p = getPerson(c.personId) || {};
       s += ` ${p.name||''} ${p.about||''} ${p.phone||''} ${c.help||''}`;
     });
+    (n.supplies||[]).forEach(x=>{ s += ` ${x.name||''} ${x.qty||''} ${x.supplier||''} ${x.note||''}`; });
     return s.toLowerCase();
   };
   function run(){
