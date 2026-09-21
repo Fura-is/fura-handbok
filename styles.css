@@ -112,11 +112,35 @@ button{font-family:inherit}
   box-shadow:0 1px 4px rgba(0,0,0,.25);
 }
 
+/* Verkefni: aðal-hnappur á forsíðu */
+.task-entry{
+  display:flex;align-items:center;gap:14px;text-decoration:none;
+  background:var(--green);color:#fff;border-radius:var(--radius);
+  padding:15px 18px;margin-bottom:14px;box-shadow:var(--shadow);
+}
+.task-entry:active{background:var(--green-d)}
+.task-entry--due{background:var(--danger)}
+.task-entry--due:active{background:#8f2a2a}
+.task-entry__icon{font-size:22px}
+.task-entry__body{flex:1;display:flex;flex-direction:column;line-height:1.3}
+.task-entry__body strong{font-size:17px;letter-spacing:.3px}
+.task-entry__body span{font-size:13px;opacity:.9}
+.task-entry__arrow{font-size:24px;opacity:.7}
+.task-entry__count{
+  background:#fff;color:var(--danger);font-weight:800;font-size:16px;
+  min-width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;padding:0 8px;
+}
+
+/* þéttari verkefna-rað */
 .task{
-  background:var(--card);border:1px solid var(--line);border-radius:14px;
-  padding:12px 14px;margin-bottom:10px;box-shadow:var(--shadow);
+  background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:10px 12px;margin-bottom:8px;box-shadow:var(--shadow);
   border-left:5px solid var(--line);
 }
+.task--compact{padding:9px 12px}
+.taskc__title{font-weight:700;flex:1;min-width:0}
+.taskc__row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
+.taskc__freq{font-size:12px;color:var(--muted)}
 .task--overdue{border-left-color:var(--danger)}
 .task--soon{border-left-color:var(--amber)}
 .task--ok{border-left-color:var(--ok)}
@@ -139,8 +163,8 @@ button{font-family:inherit}
 .task__img{border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#e9e6dd}
 .task__img img{width:100%;max-height:320px;object-fit:cover;display:block}
 .task__meta{margin-top:6px}
-.task__actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
-.taskbtn{border:none;border-radius:10px;padding:8px 16px;font-size:14px;font-weight:800;cursor:pointer;min-height:40px}
+.task__actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center}
+.taskbtn{border:none;border-radius:10px;padding:7px 15px;font-size:14px;font-weight:800;cursor:pointer;min-height:38px}
 .taskbtn--done{background:var(--green);color:#fff}
 .taskbtn--done:active{background:var(--green-d)}
 .taskbtn--done:disabled{opacity:.5}
@@ -182,6 +206,7 @@ button{font-family:inherit}
   grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
 }
 .card{
+  position:relative;
   background:var(--card);border-radius:var(--radius);overflow:hidden;
   box-shadow:var(--shadow);text-decoration:none;color:inherit;
   display:flex;flex-direction:column;cursor:pointer;border:1px solid var(--line);
