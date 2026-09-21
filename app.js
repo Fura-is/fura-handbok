@@ -531,13 +531,13 @@ function renderNode(path){
   mountEditableText(notesHost, node.notes, 'Skrifaðu athugasemdir…', (v)=>{ node.notes=v; saveData(); });
   if(!isEdit() && !(node.notes||'').trim()){ notesHost.classList.remove('notecard'); notesHost.innerHTML='<p class="empty">Engar athugasemdir enn.</p>'; }
 
-  renderMaintenance(node, rerender);
+  renderMaintenance(node, path, rerender);
   renderSupplies(node);
   renderContacts(node);
 
   // Í lestrarham: fela tóma hluta svo aðeins það sem hefur upplýsingar sjáist (símavænt)
   if(!isEdit()){
-    if(!node.maintenance.length)  $('#secMaint').style.display='none';
+    if(!subtreeTaskCount(node))   $('#secMaint').style.display='none';
     if(!(node.notes||'').trim())  $('#secNotes').style.display='none';
     if(!node.supplies.length)     $('#secSupplies').style.display='none';
     if(!node.contacts.length)     $('#secContacts').style.display='none';
@@ -559,7 +559,7 @@ function renderNode(path){
       toast('Eytt');
     };
     $('#addChild').onclick = ()=>addChildTo(node.children, rerender);
-    $('#addMaint').onclick = ()=>{ node.maintenance.push({ id:uid(), title:'', freqType:'weekly', freqValue:'', dueDate:'', responsibleId:'' }); saveData(); rerender(); };
+    $('#addMaint').onclick = ()=>{ node.maintenance.push({ id:uid(), title:'', freqType:'weekly', freqValue:'', dueDate:'', responsibleId:'', photo:'' }); saveData(); rerender(); };
     $('#addSupply').onclick = ()=>{ node.supplies.push({id:uid(),name:'',qty:'',supplier:'',note:''}); saveData(); rerender(); };
     $('#addContact').onclick = ()=> chooseContact(node, (personIds)=>{
       personIds.forEach(personId => node.contacts.push({ id:uid(), personId, help:'' }));
@@ -668,13 +668,48 @@ function responsibleEditor(t, onSave){
   wrap.appendChild(sel); return wrap;
 }
 
-function renderMaintenance(node, rerender){
+// öll verkefni í þessum hnút OG öllu sem er inni í honum (svo þau sjáist á "hero" síðunni)
+function subtreeTaskItems(node, path){
+  let out = (node.maintenance||[]).map(t=>({ t, owner:node, ownerPath:path }));
+  (node.children||[]).forEach(c=> out = out.concat(subtreeTaskItems(c, [...path, c.id])));
+  return out;
+}
+function subtreeTaskCount(node){ let n=(node.maintenance||[]).length; (node.children||[]).forEach(c=> n+=subtreeTaskCount(c)); return n; }
+// tæki (hnútar) inni í node — til að tengja verk við [{node,path,depth}]
+function descendantMachines(node, path, depth=0){
+  let out=[];
+  (node.children||[]).forEach(c=>{ out.push({ node:c, path:[...path,c.id], depth }); out = out.concat(descendantMachines(c, [...path,c.id], depth+1)); });
+  return out;
+}
+// veljari til að tengja/færa verk á ákveðna vél (eða halda á svæðinu)
+function machineEditor(t, owner, areaNode, choices, redraw){
+  const wrap=document.createElement('div'); wrap.innerHTML=`<div class="fieldlabel">Tæki (valfrjálst)</div>`;
+  const sel=document.createElement('select'); sel.className='fsel';
+  const oArea=document.createElement('option'); oArea.value='__area__'; oArea.textContent=`— ${areaNode.name||'þetta svæði'} (almennt) —`; if(owner===areaNode) oArea.selected=true; sel.appendChild(oArea);
+  choices.forEach(c=>{ const o=document.createElement('option'); o.value=c.path.join('/'); o.textContent=('· '.repeat(c.depth))+(c.node.name||'(vél)'); if(c.node===owner) o.selected=true; sel.appendChild(o); });
+  sel.onchange=()=>{
+    let target=areaNode;
+    if(sel.value!=='__area__'){ const f=choices.find(c=>c.path.join('/')===sel.value); if(f) target=f.node; }
+    if(target!==owner){
+      owner.maintenance=(owner.maintenance||[]).filter(x=>x!==t);
+      target.maintenance=target.maintenance||[]; target.maintenance.push(t);
+      saveData();
+    }
+    redraw();
+  };
+  wrap.appendChild(sel); return wrap;
+}
+
+function renderMaintenance(node, path, rerender){
   const wrap = $('#maint');
   node.maintenance = node.maintenance || [];
-  if(!node.maintenance.length){ wrap.innerHTML = isEdit()?'' : '<p class="empty">Ekkert viðhald skráð.</p>'; return; }
+  const order = { overdue:0, soon:1, ok:2, done:3 };
+  const items = subtreeTaskItems(node, path).sort((a,b)=> (order[taskStatus(a.t).state]??9) - (order[taskStatus(b.t).state]??9));
+  if(!items.length){ wrap.innerHTML = isEdit()?'' : '<p class="empty">Ekkert viðhald skráð.</p>'; return; }
   wrap.innerHTML='';
-  const redraw = ()=>renderMaintenance(node, rerender);
-  node.maintenance.forEach(t=>{
+  const redraw = ()=>renderMaintenance(node, path, rerender);
+  const machineChoices = descendantMachines(node, path);
+  items.forEach(({t, owner, ownerPath})=>{
     const st = taskStatus(t), comp = COMPLETIONS[t.id];
     const el=document.createElement('div'); el.className='task task--'+st.state;
     el.innerHTML = `
@@ -682,13 +717,19 @@ function renderMaintenance(node, rerender){
         <div class="task__title"></div>
         <span class="task__badge task__badge--${st.state}">${esc(st.text||'')}</span>
       </div>
+      <div class="task__machine"></div>
+      <div class="task__photo"></div>
       <div class="task__meta"></div>
       <div class="task__actions"></div>`;
     mountEditableText($('.task__title',el), t.title, 'Hvað á að gera? (t.d. smyrja legur)', (v)=>{t.title=v;saveData();}, {strong:true});
+    // hvaða vél tilheyrir verkið (sýnt ef það er dýpra en þessi síða)
+    if(owner !== node){ $('.task__machine',el).innerHTML = `<a class="taskchip" href="#/n/${ownerPath.join('/')}">🔧 ${esc(owner.name)}</a>`; }
+    if(t.photo) $('.task__photo',el).innerHTML = `<div class="task__img"><img src="${t.photo}" alt="" loading="lazy" decoding="async"></div>`;
     const meta=$('.task__meta',el);
     if(isEdit()){
       meta.appendChild(freqEditor(t, redraw));
       meta.appendChild(responsibleEditor(t, ()=>{ saveData(); redraw(); }));
+      if(machineChoices.length) meta.appendChild(machineEditor(t, owner, node, machineChoices, redraw));
     } else {
       const res=getPerson(t.responsibleId), bits=[freqLabel(t)];
       if(res) bits.push('Ábyrgð: '+esc(res.name));
@@ -701,7 +742,13 @@ function renderMaintenance(node, rerender){
     done.onclick = async ()=>{ done.disabled=true; await completeTask(t.id); toast('Skráð búið ✓'); redraw(); };
     actions.appendChild(done);
     if(comp){ const u=document.createElement('button'); u.className='taskbtn taskbtn--undo'; u.textContent='Afturkalla'; u.onclick=async ()=>{ await uncompleteTask(t.id); redraw(); }; actions.appendChild(u); }
-    if(isEdit()){ const d=document.createElement('button'); d.className='delbtn'; d.textContent='✕ Eyða verki'; d.onclick=()=>{ if(confirm('Eyða þessu viðhaldsverki?')){ node.maintenance=node.maintenance.filter(x=>x!==t); saveData(); rerender(); } }; actions.appendChild(d); }
+    if(isEdit()){
+      const ph=document.createElement('button'); ph.className='taskbtn taskbtn--undo'; ph.textContent = t.photo?'📷 Skipta um mynd':'📷 Bæta við mynd';
+      ph.onclick=async ()=>{ const url=await pickAndUpload(); if(url){ t.photo=url; saveData(); redraw(); } };
+      actions.appendChild(ph);
+      if(t.photo){ const rm=document.createElement('button'); rm.className='delbtn'; rm.textContent='✕ Mynd'; rm.onclick=()=>{ t.photo=''; saveData(); redraw(); }; actions.appendChild(rm); }
+      const d=document.createElement('button'); d.className='delbtn'; d.textContent='✕ Eyða verki'; d.onclick=()=>{ if(confirm('Eyða þessu viðhaldsverki?')){ owner.maintenance=(owner.maintenance||[]).filter(x=>x!==t); saveData(); rerender(); } }; actions.appendChild(d);
+    }
     wrap.appendChild(el);
   });
 }
