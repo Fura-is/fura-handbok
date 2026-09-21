@@ -151,6 +151,8 @@ button{font-family:inherit}
 }
 .freqextra{margin-top:8px}
 .fnum,.fdate{margin-top:0}
+.switch{display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:700;padding:4px 0 8px;font-size:15px}
+.switch input{width:20px;height:20px;accent-color:var(--green)}
 
 /* Mitt viðhald (forsíða) */
 .mymaint{

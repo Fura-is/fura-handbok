@@ -629,24 +629,37 @@ function chooseContact(node, done){
 
 /* ---------- Viðhald á tæki ---------- */
 function freqLabel(t){
-  if(t.freqType==='weekly')  return 'Vikulega';
-  if(t.freqType==='monthly') return 'Mánaðarlega';
-  if(t.freqType==='days')    return `Á ${t.freqValue||'?'} daga fresti`;
+  if(t.freqType==='weekly')  return '🔁 Vikulega';
+  if(t.freqType==='monthly') return '🔁 Mánaðarlega';
+  if(t.freqType==='days')    return `🔁 Á ${t.freqValue||'?'} daga fresti`;
   if(t.freqType==='once')    return t.dueDate ? ('Einu sinni — fyrir '+fmtDate(t.dueDate)) : 'Einu sinni';
   return '';
 }
 function fmtWhen(iso){ try{ const days=Math.floor((Date.now()-new Date(iso).getTime())/86400000); if(days<=0)return 'í dag'; if(days===1)return 'í gær'; return `fyrir ${days} dögum`; }catch(e){ return ''; } }
 
 function freqEditor(t, reflow){
-  const wrap=document.createElement('div'); wrap.innerHTML=`<div class="fieldlabel">Hversu oft</div>`;
-  const sel=document.createElement('select'); sel.className='fsel';
-  [['weekly','Vikulega'],['monthly','Mánaðarlega'],['days','Á X daga fresti'],['once','Einu sinni (dagsetning)']]
-    .forEach(([v,l])=>{ const o=document.createElement('option'); o.value=v; o.textContent=l; if(t.freqType===v)o.selected=true; sel.appendChild(o); });
-  wrap.appendChild(sel);
-  const extra=document.createElement('div'); extra.className='freqextra'; wrap.appendChild(extra);
-  if(t.freqType==='days'){ const i=document.createElement('input'); i.type='number'; i.min='1'; i.className='edit fnum'; i.value=t.freqValue||''; i.placeholder='Fjöldi daga'; i.oninput=()=>{ t.freqValue=i.value; saveData(); }; extra.appendChild(i); }
-  else if(t.freqType==='once'){ const i=document.createElement('input'); i.type='date'; i.className='edit fdate'; i.value=t.dueDate||''; i.onchange=()=>{ t.dueDate=i.value; saveData(); }; extra.appendChild(i); }
-  sel.onchange=()=>{ t.freqType=sel.value; saveData(); reflow(); };
+  const wrap=document.createElement('div');
+  const repeating = t.freqType!=='once';
+  // Rofi: endurtaka eða einskiptis
+  const sw=document.createElement('label'); sw.className='switch';
+  sw.innerHTML = `<input type="checkbox" ${repeating?'checked':''}><span>🔁 Endurtaka verk</span>`;
+  wrap.appendChild(sw);
+  sw.querySelector('input').onchange=(e)=>{ t.freqType = e.target.checked ? 'weekly' : 'once'; saveData(); reflow(); };
+
+  const body=document.createElement('div'); wrap.appendChild(body);
+  if(repeating){
+    body.innerHTML=`<div class="fieldlabel">Hversu oft</div>`;
+    const sel=document.createElement('select'); sel.className='fsel';
+    [['weekly','Vikulega'],['monthly','Mánaðarlega'],['days','Á X daga fresti']]
+      .forEach(([v,l])=>{ const o=document.createElement('option'); o.value=v; o.textContent=l; if(t.freqType===v)o.selected=true; sel.appendChild(o); });
+    body.appendChild(sel);
+    const extra=document.createElement('div'); extra.className='freqextra'; body.appendChild(extra);
+    if(t.freqType==='days'){ const i=document.createElement('input'); i.type='number'; i.min='1'; i.className='edit'; i.value=t.freqValue||''; i.placeholder='Fjöldi daga'; i.oninput=()=>{ t.freqValue=i.value; saveData(); }; extra.appendChild(i); }
+    sel.onchange=()=>{ t.freqType=sel.value; saveData(); reflow(); };
+  } else {
+    body.innerHTML=`<div class="fieldlabel">Klára fyrir (dagsetning)</div>`;
+    const i=document.createElement('input'); i.type='date'; i.className='edit'; i.value=t.dueDate||''; i.onchange=()=>{ t.dueDate=i.value; saveData(); }; body.appendChild(i);
+  }
   return wrap;
 }
 // öll verkefni í þessum hnút OG öllu sem er inni í honum (svo þau sjáist á "hero" síðunni)
