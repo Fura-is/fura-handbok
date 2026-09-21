@@ -131,6 +131,87 @@ function getPerson(id){ return (DATA.people||[]).find(p=>p.id===id); }
 function cacheData(){ try{ localStorage.setItem(CACHE_KEY, JSON.stringify(DATA)); }catch(e){} }
 function loadCache(){ try{ const r = localStorage.getItem(CACHE_KEY); if(r) return JSON.parse(r); }catch(e){} return null; }
 
+/* ============================================================
+   VIÐHALD — verkefni, "lokið"-staða, auðkenni
+   ============================================================ */
+let COMPLETIONS = {};                 // { taskId: {at, by} } — sótt úr Supabase
+const ME_KEY = 'fura_me_v1';          // hver ég er (personId) — bara á þessu tæki
+
+// hver er ég? (bara fyrir "Mitt viðhald" og "búið af hverjum" — læsir engu)
+function getMe(){ try{ const id=localStorage.getItem(ME_KEY); return id ? getPerson(id) : null; }catch(e){ return null; } }
+function setMe(id){ try{ id ? localStorage.setItem(ME_KEY, id) : localStorage.removeItem(ME_KEY); }catch(e){} }
+
+// sækja/uppfæra "lokið"-stöðu (báðir kóðar mega)
+async function fetchMaintenance(code){
+  if(!db) return {};
+  const { data, error } = await db.rpc('get_maintenance', { p_code: code });
+  if(error) throw error;
+  return data || {};
+}
+async function completeTask(taskId){
+  const by = (getMe() && getMe().name) || '';
+  COMPLETIONS[taskId] = { at:new Date().toISOString(), by };   // bjartsýn uppfærsla (strax)
+  if(!db || !UNLOCK_CODE) return;
+  try{
+    const { data, error } = await db.rpc('complete_task', { p_code:UNLOCK_CODE, p_task_id:taskId, p_by:by });
+    if(error) throw error;
+    if(data) COMPLETIONS = data;
+  }catch(e){ toast('Vistun mistókst — er búið að keyra viðhalds-SQL?'); }
+}
+async function uncompleteTask(taskId){
+  delete COMPLETIONS[taskId];
+  if(!db || !UNLOCK_CODE) return;
+  try{ const { data, error } = await db.rpc('uncomplete_task', { p_code:UNLOCK_CODE, p_task_id:taskId }); if(error) throw error; if(data!=null) COMPLETIONS = data; }
+  catch(e){ toast('Tókst ekki að afturkalla'); }
+}
+
+// tíðni verkefnis í dögum (null = einskiptis)
+function taskIntervalDays(t){
+  if(t.freqType==='weekly')  return 7;
+  if(t.freqType==='monthly') return 30;
+  if(t.freqType==='days')    return Math.max(1, parseInt(t.freqValue,10)||1);
+  return null;
+}
+function fmtDate(d){ try{ return new Date(d+'T00:00:00').toLocaleDateString('is-IS',{day:'numeric',month:'short'}); }catch(e){ return d||''; } }
+
+// staða verkefnis: {state:'ok'|'soon'|'overdue'|'done', text}
+function taskStatus(t){
+  const comp = COMPLETIONS[t.id];
+  const DAY = 86400000, now = Date.now();
+  if(t.freqType==='once'){
+    if(comp) return { state:'done', text:'Lokið ✓' };
+    if(!t.dueDate) return { state:'soon', text:'Ódagsett' };
+    const days = Math.ceil((new Date(t.dueDate+'T00:00:00').getTime() - now)/DAY);
+    if(days < 0)  return { state:'overdue', text:`${-days} d. fram yfir` };
+    if(days <= 3) return { state:'soon', text: days===0?'Í dag':`Eftir ${days} d.` };
+    return { state:'ok', text:`Fyrir ${fmtDate(t.dueDate)}` };
+  }
+  const iv = taskIntervalDays(t);
+  if(!comp) return { state:'overdue', text:'Aldrei gert' };
+  const days = Math.ceil((new Date(comp.at).getTime() + iv*DAY - now)/DAY);
+  if(days < 0)  return { state:'overdue', text:`${-days} d. fram yfir` };
+  if(days <= 1) return { state:'soon', text: days<=0?'Á tíma':'Á morgun' };
+  return { state:'ok', text:`Eftir ${days} d.` };
+}
+const taskOutstanding = (t)=> taskStatus(t).state === 'overdue';
+
+// hefur þessi hnútur (eða eitthvað inni í honum) verkefni sem er fram yfir?
+function nodeHasOutstanding(n){
+  if((n.maintenance||[]).some(taskOutstanding)) return true;
+  return (n.children||[]).some(nodeHasOutstanding);
+}
+// öll verkefni með hnút + slóð (fyrir "Mitt viðhald")
+function allTasks(nodes=DATA.tree, path=[]){
+  let out=[];
+  for(const n of nodes){
+    const p=[...path,n.id];
+    (n.maintenance||[]).forEach(t=> out.push({ task:t, node:n, path:p }));
+    if(n.children&&n.children.length) out = out.concat(allTasks(n.children, p));
+  }
+  return out;
+}
+function tidyName(t){ return (t||'').trim(); }
+
 async function fetchHandbook(code){
   const { data, error } = await db.rpc('get_handbook', { p_code: code });
   if(error) throw error;
@@ -158,7 +239,7 @@ function linkify(s){ return nl2br(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="
 const isEdit = () => MODE === 'edit';
 
 function emptyNode(name){
-  return { id:uid(), name:(name||'').trim(), photo:'', summary:'', children:[], notes:'', contacts:[] };
+  return { id:uid(), name:(name||'').trim(), photo:'', summary:'', children:[], notes:'', contacts:[], supplies:[], maintenance:[] };
 }
 
 function toast(msg){
@@ -317,6 +398,7 @@ async function tryCode(code){
   // ef handbókin er tóm og þú mátt breyta -> settu inn sýnishorn í fyrsta sinn
   if(MODE === 'edit' && DATA.tree.length === 0){ DATA = normalize(JSON.parse(JSON.stringify(SEED))); await saveData(); }
   cacheData();
+  try{ COMPLETIONS = await fetchMaintenance(code); }catch(e){ COMPLETIONS = {}; }
   localStorage.setItem(UNLOCK_KEY, JSON.stringify({ role:MODE, code }));
   go('#/'); render();
   toast(MODE === 'edit' ? 'Breytingar virkar ✏️' : 'Velkomin/n');
@@ -326,29 +408,48 @@ function lock(){ MODE='locked'; UNLOCK_CODE=null; localStorage.removeItem(UNLOCK
 /* ============================================================
    Forsíða
    ============================================================ */
+function myMaintenanceHTML(){
+  const me = getMe();
+  if(!me) return '';
+  const mine = allTasks().filter(x => x.task.responsibleId===me.id && taskStatus(x.task).state==='overdue');
+  if(!mine.length) return '';
+  return `<div class="mymaint">
+    <div class="mymaint__head">🔧 Mitt viðhald — ${mine.length} ${mine.length===1?'verk':'verk'} bíða</div>
+    ${mine.map(x=>{ const st=taskStatus(x.task); return `<a class="mymaint__item" href="#/n/${x.path.join('/')}">
+      <span class="mymaint__t">${esc(x.task.title||'Viðhald')}</span>
+      <span class="mymaint__loc">${esc(x.node.name)} · ${esc(st.text)}</span></a>`; }).join('')}
+  </div>`;
+}
 function renderHome(){
   const cards = DATA.tree.map(n => cardFor(n, [n.id])).join('');
   const add = isEdit() ? `<button class="card card--add" id="addTop"><span>＋</span>Bæta við stað / vél</button>` : '';
+  const me = getMe();
   app.innerHTML = `
     <div class="page-head">
       <h1>Fura handbók</h1>
       <p>Veldu stað eða vél — eða leitaðu efst.</p>
     </div>
+    ${myMaintenanceHTML()}
+    <button class="idbar" id="idBtn">${me ? '👤 Þú ert: <strong>'+esc(me.name)+'</strong> — smelltu til að breyta' : '👤 Veldu hver þú ert (fyrir viðhaldsáminningar)'}</button>
     <a class="pb-entry" href="#/simaskra">
       <span class="pb-entry__icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></span>
       <span class="pb-entry__body"><strong>Símaskráin</strong><span>Allir tengiliðir og símanúmer</span></span>
       <span class="pb-entry__arrow">›</span>
     </a>
     <div class="grid">${cards}${add}</div>`;
+  $('#idBtn').onclick = chooseMe;
   if(isEdit()) $('#addTop').onclick = ()=>addChildTo(DATA.tree, renderHome);
 }
 
 function cardFor(n, path){
   const kids = (n.children && n.children.length) || 0;
   const branch = kids > 0;
+  const due = nodeHasOutstanding(n);   // rautt ef viðhald er fram yfir (hér eða dýpra)
+  const cls = due ? 'card--due' : (branch ? 'card--branch' : 'card--leaf');
   return `
-    <a class="card ${branch?'card--branch':'card--leaf'}" href="#/n/${path.join('/')}">
+    <a class="card ${cls}" href="#/n/${path.join('/')}">
       ${photoBlock(n.photo,'card__photo','⚙')}
+      ${due?`<span class="card__due">🔧 Viðhald</span>`:''}
       <div class="card__body">
         <div class="card__title">${esc(n.name)}</div>
         ${branch?`<div class="card__more">${kids} ${kids===1?'vél inni':'vélar inni'} ›</div>`:''}
@@ -373,6 +474,7 @@ function renderNode(path){
   node.children = node.children || [];
   node.contacts = node.contacts || [];
   node.supplies = node.supplies || [];
+  node.maintenance = node.maintenance || [];
   const ancestors = r.chain.slice(0, -1);
   const crumbs = ['Forsíða', ...ancestors.map(a=>esc(a.name))].join(' · ');
   const rerender = ()=>renderNode(path);
@@ -394,6 +496,12 @@ function renderNode(path){
           <button class="delbtn" id="deleteNode">🗑️ Eyða þessu</button>
         </div>`:''}
       </div>
+    </div>
+
+    <div class="section" id="secMaint">
+      <div class="section__head"><span class="section__icon">🔧</span><h2>Viðhald</h2></div>
+      <div id="maint"></div>
+      ${isEdit()?`<button class="addbtn" id="addMaint">＋ Bæta við viðhaldsverki</button>`:''}
     </div>
 
     ${showChildren ? `<div class="section">
@@ -423,11 +531,13 @@ function renderNode(path){
   mountEditableText(notesHost, node.notes, 'Skrifaðu athugasemdir…', (v)=>{ node.notes=v; saveData(); });
   if(!isEdit() && !(node.notes||'').trim()){ notesHost.classList.remove('notecard'); notesHost.innerHTML='<p class="empty">Engar athugasemdir enn.</p>'; }
 
+  renderMaintenance(node, rerender);
   renderSupplies(node);
   renderContacts(node);
 
   // Í lestrarham: fela tóma hluta svo aðeins það sem hefur upplýsingar sjáist (símavænt)
   if(!isEdit()){
+    if(!node.maintenance.length)  $('#secMaint').style.display='none';
     if(!(node.notes||'').trim())  $('#secNotes').style.display='none';
     if(!node.supplies.length)     $('#secSupplies').style.display='none';
     if(!node.contacts.length)     $('#secContacts').style.display='none';
@@ -449,6 +559,7 @@ function renderNode(path){
       toast('Eytt');
     };
     $('#addChild').onclick = ()=>addChildTo(node.children, rerender);
+    $('#addMaint').onclick = ()=>{ node.maintenance.push({ id:uid(), title:'', freqType:'weekly', freqValue:'', dueDate:'', responsibleId:'' }); saveData(); rerender(); };
     $('#addSupply').onclick = ()=>{ node.supplies.push({id:uid(),name:'',qty:'',supplier:'',note:''}); saveData(); rerender(); };
     $('#addContact').onclick = ()=> chooseContact(node, (personIds)=>{
       personIds.forEach(personId => node.contacts.push({ id:uid(), personId, help:'' }));
@@ -523,6 +634,106 @@ function chooseContact(node, done){
   overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
 
   draw(); updateAdd(); searchEl.focus();
+}
+
+/* ---------- Viðhald á tæki ---------- */
+function freqLabel(t){
+  if(t.freqType==='weekly')  return 'Vikulega';
+  if(t.freqType==='monthly') return 'Mánaðarlega';
+  if(t.freqType==='days')    return `Á ${t.freqValue||'?'} daga fresti`;
+  if(t.freqType==='once')    return t.dueDate ? ('Einu sinni — fyrir '+fmtDate(t.dueDate)) : 'Einu sinni';
+  return '';
+}
+function fmtWhen(iso){ try{ const days=Math.floor((Date.now()-new Date(iso).getTime())/86400000); if(days<=0)return 'í dag'; if(days===1)return 'í gær'; return `fyrir ${days} dögum`; }catch(e){ return ''; } }
+
+function freqEditor(t, reflow){
+  const wrap=document.createElement('div'); wrap.innerHTML=`<div class="fieldlabel">Hversu oft</div>`;
+  const sel=document.createElement('select'); sel.className='fsel';
+  [['weekly','Vikulega'],['monthly','Mánaðarlega'],['days','Á X daga fresti'],['once','Einu sinni (dagsetning)']]
+    .forEach(([v,l])=>{ const o=document.createElement('option'); o.value=v; o.textContent=l; if(t.freqType===v)o.selected=true; sel.appendChild(o); });
+  wrap.appendChild(sel);
+  const extra=document.createElement('div'); extra.className='freqextra'; wrap.appendChild(extra);
+  if(t.freqType==='days'){ const i=document.createElement('input'); i.type='number'; i.min='1'; i.className='edit fnum'; i.value=t.freqValue||''; i.placeholder='Fjöldi daga'; i.oninput=()=>{ t.freqValue=i.value; saveData(); }; extra.appendChild(i); }
+  else if(t.freqType==='once'){ const i=document.createElement('input'); i.type='date'; i.className='edit fdate'; i.value=t.dueDate||''; i.onchange=()=>{ t.dueDate=i.value; saveData(); }; extra.appendChild(i); }
+  sel.onchange=()=>{ t.freqType=sel.value; saveData(); reflow(); };
+  return wrap;
+}
+function responsibleEditor(t, onSave){
+  const wrap=document.createElement('div'); wrap.innerHTML=`<div class="fieldlabel">Ábyrgðarmaður</div>`;
+  const sel=document.createElement('select'); sel.className='fsel';
+  const none=document.createElement('option'); none.value=''; none.textContent='— enginn —'; sel.appendChild(none);
+  (DATA.people||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','is'))
+    .forEach(p=>{ const o=document.createElement('option'); o.value=p.id; o.textContent=p.name||'(nafnlaus)'; if(t.responsibleId===p.id)o.selected=true; sel.appendChild(o); });
+  sel.onchange=()=>{ t.responsibleId=sel.value; onSave(); };
+  wrap.appendChild(sel); return wrap;
+}
+
+function renderMaintenance(node, rerender){
+  const wrap = $('#maint');
+  node.maintenance = node.maintenance || [];
+  if(!node.maintenance.length){ wrap.innerHTML = isEdit()?'' : '<p class="empty">Ekkert viðhald skráð.</p>'; return; }
+  wrap.innerHTML='';
+  const redraw = ()=>renderMaintenance(node, rerender);
+  node.maintenance.forEach(t=>{
+    const st = taskStatus(t), comp = COMPLETIONS[t.id];
+    const el=document.createElement('div'); el.className='task task--'+st.state;
+    el.innerHTML = `
+      <div class="task__top">
+        <div class="task__title"></div>
+        <span class="task__badge task__badge--${st.state}">${esc(st.text||'')}</span>
+      </div>
+      <div class="task__meta"></div>
+      <div class="task__actions"></div>`;
+    mountEditableText($('.task__title',el), t.title, 'Hvað á að gera? (t.d. smyrja legur)', (v)=>{t.title=v;saveData();}, {strong:true});
+    const meta=$('.task__meta',el);
+    if(isEdit()){
+      meta.appendChild(freqEditor(t, redraw));
+      meta.appendChild(responsibleEditor(t, ()=>{ saveData(); redraw(); }));
+    } else {
+      const res=getPerson(t.responsibleId), bits=[freqLabel(t)];
+      if(res) bits.push('Ábyrgð: '+esc(res.name));
+      if(comp && comp.at) bits.push('Síðast: '+fmtWhen(comp.at)+(comp.by?(' ('+esc(comp.by)+')'):''));
+      meta.innerHTML=`<div class="meta">${bits.filter(Boolean).join(' · ')}</div>`;
+    }
+    const actions=$('.task__actions',el);
+    const done=document.createElement('button'); done.className='taskbtn taskbtn--done';
+    done.textContent = st.state==='done' ? 'Lokið ✓' : '✓ Búið';
+    done.onclick = async ()=>{ done.disabled=true; await completeTask(t.id); toast('Skráð búið ✓'); redraw(); };
+    actions.appendChild(done);
+    if(comp){ const u=document.createElement('button'); u.className='taskbtn taskbtn--undo'; u.textContent='Afturkalla'; u.onclick=async ()=>{ await uncompleteTask(t.id); redraw(); }; actions.appendChild(u); }
+    if(isEdit()){ const d=document.createElement('button'); d.className='delbtn'; d.textContent='✕ Eyða verki'; d.onclick=()=>{ if(confirm('Eyða þessu viðhaldsverki?')){ node.maintenance=node.maintenance.filter(x=>x!==t); saveData(); rerender(); } }; actions.appendChild(d); }
+    wrap.appendChild(el);
+  });
+}
+
+/* ---------- Auðkenni: hver ert þú? (fyrir Mitt viðhald) ---------- */
+function chooseMe(){
+  const people=(DATA.people||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','is'));
+  const overlay=document.createElement('div'); overlay.className='modal';
+  overlay.innerHTML=`<div class="modal__box">
+    <div class="modal__title">Hver ert þú?</div>
+    <div class="modal__hint">Geymist bara á þínum síma og læsir engu — stýrir aðeins hvaða viðhaldsáminningar þú færð.</div>
+    <input class="searchinput modal__search" id="meSearch" placeholder="Leita að nafni…" autocomplete="off">
+    <div class="modal__list" id="meList"></div>
+    <div class="editrow" style="margin-top:12px">
+      <button class="editbtn" data-act="clear">Hreinsa</button>
+      <button class="editbtn" data-act="cancel">Hætta við</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const close=()=>overlay.remove();
+  const listEl=overlay.querySelector('#meList'), s=overlay.querySelector('#meSearch');
+  function draw(){
+    const q=s.value.trim().toLowerCase();
+    const m=people.filter(p=>(p.name||'').toLowerCase().includes(q));
+    listEl.innerHTML = m.length ? m.map(p=>`<button class="modal__item" data-id="${p.id}"><span class="modal__name">${esc(p.name||'(nafnlaus)')}</span></button>`).join('') : '<p class="empty">Ekkert fannst.</p>';
+    listEl.querySelectorAll('.modal__item').forEach(b=> b.onclick=()=>{ setMe(b.dataset.id); close(); renderHome(); });
+  }
+  s.addEventListener('input', draw);
+  overlay.querySelector('[data-act="clear"]').onclick=()=>{ setMe(null); close(); renderHome(); };
+  overlay.querySelector('[data-act="cancel"]').onclick=close;
+  overlay.addEventListener('click',e=>{ if(e.target===overlay) close(); });
+  draw(); s.focus();
 }
 
 function renderSupplies(node){
@@ -792,6 +1003,7 @@ document.addEventListener('visibilitychange', async ()=>{
   if(document.visibilityState==='visible' && MODE!=='locked' && UNLOCK_CODE && db){
     try{
       const res = await fetchHandbook(UNLOCK_CODE);
+      try{ COMPLETIONS = await fetchMaintenance(UNLOCK_CODE); }catch(e){}
       if(res){
         DATA = normalize(res.data); cacheData();
         if(!document.querySelector('textarea.edit, input.edit')) render(); // ekki trufla ef verið er að skrifa
@@ -813,6 +1025,7 @@ async function init(){
   if(db){
     try{
       const res = await fetchHandbook(unlock.code);
+      try{ COMPLETIONS = await fetchMaintenance(unlock.code); }catch(e){}
       if(res){ MODE = res.role; DATA = normalize(res.data); cacheData(); render(); return; }
       else { lock(); return; }                         // kóða breytt -> læsa
     }catch(e){ if(!cached){ renderLock(); } }           // ónettengt og ekkert afrit
