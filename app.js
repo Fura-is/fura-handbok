@@ -350,7 +350,6 @@ function render(){
   const p = parseHash();
   if(p[0] === 'leit'){ renderSearch(); }
   else if(p[0] === 'simaskra'){ renderPhonebook(); }
-  else if(p[0] === 'verkefni'){ renderTasks(); }
   else if(p[0] === 'n'){ renderNode(p.slice(1)); }
   else { renderHome(); }
   window.scrollTo(0,0);
@@ -423,17 +422,11 @@ function renderHome(){
   const cards = DATA.tree.map(n => cardFor(n, [n.id])).join('');
   const add = isEdit() ? `<button class="card card--add" id="addTop"><span>＋</span>Bæta við stað / vél</button>` : '';
   const myName = getMyName();
-  const dueTotal = DATA.tree.reduce((s,n)=> s + subtreeOutstandingCount(n), 0);
   app.innerHTML = `
     <div class="page-head">
       <h1>Fura handbók</h1>
       <p>Veldu stað eða vél — eða leitaðu efst.</p>
     </div>
-    <a class="task-entry ${dueTotal?'task-entry--due':''}" href="#/verkefni">
-      <span class="task-entry__icon">🔧</span>
-      <span class="task-entry__body"><strong>Verkefni</strong><span>${dueTotal?`${dueTotal} ${dueTotal===1?'verk bíður':'verk bíða'} — hvað á að gera í dag`:'Það sem þarf að gera'}</span></span>
-      ${dueTotal?`<span class="task-entry__count">${dueTotal}</span>`:`<span class="task-entry__arrow">›</span>`}
-    </a>
     <button class="idbar" id="idBtn">${myName ? '👤 Þú ert: <strong>'+esc(myName)+'</strong> — smelltu til að breyta' : '👤 Skráðu nafnið þitt (skráist þegar þú hakar „búið")'}</button>
     <a class="pb-entry" href="#/simaskra">
       <span class="pb-entry__icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg></span>
@@ -718,7 +711,7 @@ function renderMaintenance(node, path, rerender){
   const machineChoices = descendantMachines(node, path);
   items.forEach(({t, owner, ownerPath})=>{
     const st = taskStatus(t), comp = COMPLETIONS[t.id];
-    const el=document.createElement('div'); el.className='task task--'+st.state;
+    const el=document.createElement('div'); el.className='task task--'+st.state+(isEdit()?'':' task--compact');
     el.innerHTML = `
       <div class="task__top">
         <div class="task__title"></div>
@@ -731,7 +724,9 @@ function renderMaintenance(node, path, rerender){
     mountEditableText($('.task__title',el), t.title, 'Hvað á að gera? (t.d. smyrja legur)', (v)=>{t.title=v;saveData();}, {strong:true});
     // hvaða vél tilheyrir verkið (sýnt ef það er dýpra en þessi síða)
     if(owner !== node){ $('.task__machine',el).innerHTML = `<a class="taskchip" href="#/n/${ownerPath.join('/')}">🔧 ${esc(owner.name)}</a>`; }
-    if(t.photo) $('.task__photo',el).innerHTML = `<div class="task__img"><img src="${t.photo}" alt="" loading="lazy" decoding="async"></div>`;
+    if(t.photo) $('.task__photo',el).innerHTML = isEdit()
+      ? `<div class="task__img"><img src="${t.photo}" alt="" loading="lazy" decoding="async"></div>`
+      : `<a class="task__thumb" href="${t.photo}" target="_blank" rel="noopener" title="Opna mynd"><img src="${t.photo}" alt="" loading="lazy" decoding="async"></a>`;
     const meta=$('.task__meta',el);
     if(isEdit()){
       meta.appendChild(freqEditor(t, redraw));
@@ -754,39 +749,6 @@ function renderMaintenance(node, path, rerender){
       if(t.photo){ const rm=document.createElement('button'); rm.className='delbtn'; rm.textContent='✕ Mynd'; rm.onclick=()=>{ t.photo=''; saveData(); redraw(); }; actions.appendChild(rm); }
       const d=document.createElement('button'); d.className='delbtn'; d.textContent='✕ Eyða verki'; d.onclick=()=>{ if(confirm('Eyða þessu viðhaldsverki?')){ owner.maintenance=(owner.maintenance||[]).filter(x=>x!==t); saveData(); rerender(); } }; actions.appendChild(d);
     }
-    wrap.appendChild(el);
-  });
-}
-
-/* ---------- Verkefni: aðal-síða (hvað á að gera í dag) ---------- */
-function renderTasks(){
-  const order = { overdue:0, soon:1, ok:2, done:3 };
-  const items = allTasks().map(x=>({ ...x, st:taskStatus(x.task) }))
-    .sort((a,b)=> (order[a.st.state]??9) - (order[b.st.state]??9));
-  app.innerHTML = `
-    <div class="crumbs">Forsíða</div>
-    <div class="page-head"><h1>Verkefni</h1><p>Hvað þarf að gera — það sem er komið fram yfir er efst og rautt.</p></div>
-    <div id="taskList"></div>`;
-  const wrap=$('#taskList');
-  if(!items.length){ wrap.innerHTML='<p class="empty">Engin verkefni skráð enn.</p>'; return; }
-  items.forEach(x=>{
-    const t=x.task, st=x.st, comp=COMPLETIONS[t.id];
-    const el=document.createElement('div'); el.className='task task--compact task--'+st.state;
-    el.innerHTML=`
-      <div class="task__top">
-        <div class="taskc__title">${esc(t.title||'Verkefni')}</div>
-        <span class="task__badge task__badge--${st.state}">${esc(st.text||'')}</span>
-      </div>
-      <div class="taskc__row">
-        <a class="taskchip" href="#/n/${x.path.join('/')}">🔧 ${esc(x.node.name)}</a>
-        <span class="taskc__freq">${esc(freqLabel(t))}</span>
-      </div>
-      <div class="task__actions"></div>`;
-    const actions=$('.task__actions',el);
-    const done=document.createElement('button'); done.className='taskbtn taskbtn--done'; done.textContent= st.state==='done'?'Lokið ✓':'✓ Búið';
-    done.onclick=async ()=>{ done.disabled=true; await completeTask(t.id); toast('Skráð búið ✓'); renderTasks(); };
-    actions.appendChild(done);
-    if(comp){ const u=document.createElement('button'); u.className='taskbtn taskbtn--undo'; u.textContent='Afturkalla'; u.onclick=async ()=>{ await uncompleteTask(t.id); renderTasks(); }; actions.appendChild(u); }
     wrap.appendChild(el);
   });
 }

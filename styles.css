@@ -138,6 +138,13 @@ button{font-family:inherit}
   border-left:5px solid var(--line);
 }
 .task--compact{padding:9px 12px}
+.task--compact .task__meta{margin-top:3px;font-size:13px}
+.task--compact .task__actions{margin-top:7px}
+.task--compact .task__machine:not(:empty){margin-top:5px}
+.task--compact .task__photo:not(:empty){margin-top:7px}
+.task__thumb{display:inline-block;border-radius:8px;overflow:hidden;border:1px solid var(--line);line-height:0}
+.task__thumb img{width:70px;height:70px;object-fit:cover;display:block}
+.task--compact .taskbtn{padding:6px 14px;min-height:34px;font-size:13px}
 .taskc__title{font-weight:700;flex:1;min-width:0}
 .taskc__row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
 .taskc__freq{font-size:12px;color:var(--muted)}
