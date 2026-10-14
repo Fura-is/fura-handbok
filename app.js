@@ -836,8 +836,8 @@ function fieldLine(label, value, ph, onSave){
    ============================================================ */
 function renderSearch(){
   app.innerHTML = `
-    <div class="page-head"><h1>Leita</h1><p>Skrifaðu nafn á vél eða hlut.</p></div>
-    <input class="searchinput" id="searchInput" placeholder="T.d. pressa, tætari, belti…" autocomplete="off">
+    <div class="page-head"><h1>Leita</h1><p>Skrifaðu nafn á vél, hlut eða tengilið.</p></div>
+    <input class="searchinput" id="searchInput" placeholder="T.d. pressa, tætari, Óli, mótor…" autocomplete="off">
     <div id="searchResults"></div>`;
   const inp = $('#searchInput'); inp.focus();
   const all = flatten();  // öll stig trésins, sama hversu djúpt
@@ -856,13 +856,31 @@ function renderSearch(){
     const out = $('#searchResults');
     if(!q){ out.innerHTML = '<p class="empty">Byrjaðu að skrifa…</p>'; return; }
     const terms = q.split(/\s+/).filter(Boolean);
-    const res = all.filter(x => { const t = nodeText(x.node); return terms.every(w => t.includes(w)); });
-    if(!res.length){ out.innerHTML = '<p class="empty">Ekkert fannst.</p>'; return; }
-    out.innerHTML = res.map(x => `
-      <a class="result" href="#/n/${x.path.join('/')}">
-        <div class="result__name">${esc(x.node.name)}</div>
-        <div class="result__path">${x.crumbs || 'Forsíða'}</div>
-      </a>`).join('');
+    const nodeRes = all.filter(x => { const t = nodeText(x.node); return terms.every(w => t.includes(w)); });
+    const peopleRes = (DATA.people||[]).filter(p => terms.every(w => personSearchText(p).includes(w)))
+      .sort((a,b)=>(a.name||'').localeCompare(b.name||'','is'));
+    if(!nodeRes.length && !peopleRes.length){ out.innerHTML = '<p class="empty">Ekkert fannst.</p>'; return; }
+    let html='';
+    if(peopleRes.length){
+      html += `<div class="search-group">Tengiliðir</div>`;
+      html += peopleRes.map(p=>{
+        const meta = [p.about, p.keywords?('🔑 '+p.keywords):''].filter(Boolean).join(' · ');
+        return `<div class="result result--person">
+          <div class="result__name">👤 ${esc(p.name||'(nafnlaus)')}</div>
+          ${meta?`<div class="result__path">${esc(meta)}</div>`:''}
+          ${p.phone?`<a class="pbCall" href="tel:${esc((p.phone||'').replace(/\s+/g,''))}">📞 ${esc(p.phone)}</a>`:''}
+        </div>`;
+      }).join('');
+    }
+    if(nodeRes.length){
+      html += `<div class="search-group">Vélar og staðir</div>`;
+      html += nodeRes.map(x => `
+        <a class="result" href="#/n/${x.path.join('/')}">
+          <div class="result__name">${esc(x.node.name)}</div>
+          <div class="result__path">${x.crumbs || 'Forsíða'}</div>
+        </a>`).join('');
+    }
+    out.innerHTML = html;
   }
   inp.addEventListener('input', run);
   run();
@@ -890,12 +908,13 @@ function renderPhonebook(){
   app.innerHTML = `
     <div class="crumbs">Forsíða</div>
     <div class="page-head"><h1>Símaskráin</h1><p>Allir tengiliðir — smelltu á númer til að hringja.</p></div>
+    <input class="searchinput" id="pbSearch" placeholder="Leita að nafni eða leitarorði…" autocomplete="off">
     <div id="pbList"></div>
     ${isEdit()?`<button class="addbtn" id="pbAdd">＋ Nýr tengiliður í símaskrá</button>`:''}`;
   const list = $('#pbList');
-  if(!people.length){ list.innerHTML = '<p class="empty">Engir tengiliðir enn.</p>'; }
+  const searchInp = $('#pbSearch');
 
-  people.forEach(p=>{
+  function buildCard(p){
     const machines = personMachines(p.id);
     const el = document.createElement('div'); el.className='pbcard';
     el.innerHTML = `
@@ -936,8 +955,18 @@ function renderPhonebook(){
         saveData(); renderPhonebook();
       }
     };
-    list.appendChild(el);
-  });
+    return el;
+  }
+
+  function drawList(){
+    const terms = searchInp.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const matches = people.filter(p => terms.every(w => personSearchText(p).includes(w)));
+    list.innerHTML = '';
+    if(!matches.length){ list.innerHTML = terms.length ? '<p class="empty">Ekkert fannst.</p>' : '<p class="empty">Engir tengiliðir enn.</p>'; return; }
+    matches.forEach(p => list.appendChild(buildCard(p)));
+  }
+  searchInp.addEventListener('input', drawList);
+  drawList();
 
   if(isEdit()) $('#pbAdd').onclick = ()=>{
     const name = prompt('Nafn tengiliðar:'); if(!name || !name.trim()) return;
